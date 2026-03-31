@@ -1,0 +1,1003 @@
+---
+title: "Patterns and trends in endangered species listing heavily biased towards imperiled vertebrates with high utility value to humans"
+subtitle: "A replication analysis using 2020 U.S. Fish & Wildlife Service Data"
+author: 
+  - "Julia Kim"
+  - "Remzi Tardu Akinci"
+thanks: "Code and data are available at: [https://github.com/julia-ve-kim/US_ Climate_Change_Biodiversity](https://github.com/julia-ve-kim/US_Climate_Change_Biodiversity); Minimal replication on Social Science Reproduction platform available at [https://doi.org/10.48152/ssrp-tpay-ac71](https://doi.org/10.48152/ssrp-tpay-ac71)."
+date: "April 17, 2024"
+date-format: long
+format: 
+  pdf: 
+    include-in-header: 
+      text: |
+        \usepackage{lscape}
+        \newcommand{\blandscape}{\begin{landscape}}
+        \newcommand{\elandscape}{\end{landscape}}
+    documentclass: article
+    geometry: margin = 1.2in
+    abstract: "The Endangered Species Act (ESA), reputed as the United States' strongest environmental law, empowers the federal government to protect listed species from extinction. This paper replicates a statistical analysis of the main determinants of actual government decisions about the ESA listing of endangered species. We apply some secondary research to estimate how species listing will evolve over the 21st century due to climate change, regarded as the most serious and persistent threat to biodiversity. The results indicate that higher likelihoods of ESA listing are heavily biased towards vertebrate species and are associated with greater endangerment, greater evolutionary uniqueness, and higher utility value to humans. Unmitigated climate change would warrant the listing of an additional 690 species, with several thousand more becoming critically imperiled but remaining unlisted. These findings emphasise the roles of both scientific and anthropocentric characteristics in the listing decision, and highlight the importance of climate change mitigation efforts in sustainably listing and protecting biodiversity." 
+    number-sections: true
+output: 
+  bookdown::pdf_document2
+toc: true
+fig_caption: yes
+nocite: '@*'
+bibliography: references.bib
+---
+
+```{r setup}
+#| echo: false
+#| message: false
+#| warning: false
+
+library(arrow)
+library(here)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(car)
+library(taxize)
+library(huxtable)
+library(patchwork)
+library(DiagrammeR)
+library(modelsummary)
+library(performance)
+# library(lintr)
+# library(stylr)
+
+# Read data
+cleaned_species_data <-
+  read_parquet(here("data/analysis_data/cleaned_speciesdata.parquet"))
+
+# Read model
+species_listing_model <- readRDS(here("models/species_listing_model.rds"))
+species_listing_model_Cook <- readRDS(here("models/species_listing_model_Cook.rds"))
+```
+
+# Introduction
+
+Climate change poses a serious threat to biodiversity. As a consequence of economic growth and development, inhibited by concern of the environment, various species of wildlife in the United States, and elsewhere in the world, have been rendered extinct or are so depleted in numbers as to be in danger of extinction [@Cornell]. In response, the American Congress signed the 1973 Endangered Species Act, empowering the federal government to protect endemic species from extinction [@USFWS]. By listing a species as endangered, the government would open legal avenues for developmental projects to be delayed and millions of dollars to be incurred [@Weitzman2]. In addition, the listed species would be eligible to receive funds for their recovery, in order to have their endangerment reduce to levels that would warrant their de-listing [@Weitzman2]. It is clear that the costs of this type of environmental protection are very considerable, growing faster than any other expenditure of comparable size in the American economy [@Weitzman2]. For these reasons, understanding the factors governing the decision to list a species under the ESA deserves serious attention. However, this subject has so far received little formal analysis, a gap that must be addressed. 
+
+In this paper, we investigate the main determinants of government decisions about the listing of endangered species, and apply some secondary research to investigate how listing might evolve over the 21st century due to climate change. We follow a reproduction of a paper by Moore et al., "Noah's Ark in a Warming World: Climate Change, Biodiversity Loss, and Public Adaptation costs in the United States" [-@Moore], published in the *Journal of the Association of Environmental and Resource Economists*. The study population consists of $n = 60,481$ extant species endemic to the United States. The estimand which we intend to replicate is the influence of these main determinants on the probability of listing a species at the time of its assessment. The data are obtained from a number of open government and scientific sources, including NatureServe, Google Books, Integrated Taxonomic Information Service (ITIS), National Centre for Biotechnology Information (NCBI) and the United States Fish & Wildlife Service (USFWS). As explanatory variables, we use proxies of both scientific and anthropocentric characteristics of species, including taxonomic classification, NatureServe conservation status, scientific and common name $n$-gram frequency, and evolutionary uniqueness. The anthropocentric characteristics, including taxonomic classification and $n$-gram frequency, are so named, because they are used in this analysis to estimate the species' utility value to humans. 
+
+Our paper successfully replicates three of their following research claims, that the probability of listing a species: (1) changes with its conservation status, decreasing from the most to least endangered, (2) increases with its evolutionary uniqueness and (3) is associated with its utility value to humans. In particular, imperiled vertebrates are more likely to be listed than imperiled non-vertebrates, and species more commonly evoked in scientific and popular literature are more likely to be listed than species less frequently written about. This shows that both scientific and anthropocentric characteristics play important roles in the government's decisions to list individual species.  Due to climate change, a global warming of $5^{\circ}$C over the next 100 years would imply that the number of listed species would grow linearly by 690 species, with an additional 2,800 species becoming critically imperiled but remaining unlisted. Our reproduction is conducted using the open-source statistical programming language `R` [@R][^1]. 
+
+[^1]: With functionalities from `arrow` [@arrow], `car` [@car], `DiagrammeR` [@DiagrammeR], `knitr` [@knitr], `kableExtra` [@kableExtra], `lintr` [@lintr], `here` [@here], `patchwork` [@patchwork], `performance` [@performance], `rstanarm` [@rstanarm], `styler` [@styler], `tidyverse` [@tidyverse] and  `taxize` [@taxize].
+
+The remainder of this paper is structured as follows: @sec-data introduces the data used for analysis, including visualisations of the variables of interest. @sec-model presents and validates the logistic regression model used to determine the relative importance of various species characteristics to USFWS' listing decision. @sec-results displays the interpretations of the model alongside other findings gained from analysis of the data. @sec-discussion addresses how these results are projected to evolve in the future under the effects of climate change. It also provides a discussion as to the implications of the findings, limitations of the paper, and next steps for future investigation.  
+
+# Data {#sec-data}
+
+## Source 
+
+The paper for replication is "Noah's Arc in a Warming World: Climate Change, Biodiversity Loss, and Public Adaptation Costs in the United States" [@Moore], published in the *Journal of the Association of Environmental and Resource Economists*. The data for replication are obtained from the associated Harvard Dataverse repository [@HarvardDataverse]. The authors' analysis sought, in part, to explore how the probability of a species being listed under the ESA was influenced by its conservation status, utility value to humans, and species uniqueness. Our replication seeks to address the validity of these three findings and to discuss the projected increases in species listing due to climate change.
+
+## Methodology 
+
+The original dataset is made publicly available by Moore [-@HarvardDataverse]. It composes of $n = 64,583$ observations, where each row represents a distinct species and each column a specific variable. As part of our reproduction, we removed variables not of interest to our analysis and any species whose status indicated a likelihood of already being extinct, leaving $n = 60,481$ extant species for analysis. The remaining variables of interest are discussed below. 
+
+### Endangerment of Species 
+
+The taxon and conservation status of species are obtained from NatureServe, an authoritative source of biodiversity data throughout the United States [@NatureServe]. The database is dynamic, being continuously updated by botanists, zoologists and ecologists, with inputs from scientists at heritage and conservation programs [@NatureServe]. The assessment of species is revised on a periodic basis, for we use the most recent assessment conducted between 1985 and 2019. 
+
+Species are divided into nine taxa, further regrouped into vertebrates -- amphibians, birds, fishes, mammals and reptiles -- and non-vertebrates -- plants, invertebrates, fungi and protists. To determine classification, NatureServe employs trained experts, who make judgments on information from field surveys, taxonomic treatments and other scientific publications [@NatureServe].
+
+Likewise, species may be assigned one of five NatureServe conservation status ranks, defined in @tbl-ranks. To assess status, trained experts use data from field surveys and primary literature to assign quantitative scores for ten factors, regrouped into three categories [@Faber-Langendoen]. In order of priority, these categories are: rarity, accounting for population size and range extent, anthropogenic threats, and long-and short-term trends in population size and extent [@Faber-Langendoen]. Once assigned, these scores are translated into a calculated status rank, as outlined in @tbl-ranks. If information is insufficient to meet assess conservation status, or the information on multiple factors is too imprecise, then the species is assigned an UNK (for "Unknown") status rank [@Faber-Langendoen]. 
+
+```{r}
+#| label: tbl-ranks
+#| tbl-cap: "Definition of Known Conservation Status Ranks used by NatureServe."
+#| echo: false
+#| message: false
+#| warning: false
+#| tbl-pos: H
+
+stmt_table <- data.frame(
+  Rank = c("G1", "G2", "G3", "G4", "G5"),
+  Category = c("Critically Imperiled", "Imperiled", "Vulnerable", 
+               "Apparently Secure", "Secure"),
+  Definition = c(
+    "At very high risk of extinction, due to very restricted range, extreme rarity, very severe threats or other factors.",
+    "At high risk of extinction due to restricted range, few occurrences, severe threats or other factors.",
+    "Rare or local, due to restricted range, few occurences, recent or widespread threats or other factors.",
+    "Uncommon, but not rare, with some cause for long-term concern.",
+    "Common, widespread and abundant."
+  )
+)
+
+kable(stmt_table, col.names = c("Rank", "Category", "Definition"), 
+      format = "latex", booktabs = TRUE, linesep = "") |>
+  column_spec(1, bold = TRUE, width = "3em") |>
+  column_spec(2, bold = TRUE, width = "10em") |>
+  column_spec(3, width = "27em")
+```
+
+We rely on the code provided by Moore [-@HarvardDataverse] to replicate @fig-constat, which shows a breakdown of conservation status by taxon. To enhance it, we colour each status rank according to colour convention adopted by NatureServe [-@NatureServe]. @fig-constat shows that 60% of species have unknown status, being almost entirely of the invertebrate (41%), plants (40%) or fungi (16%) taxa. This distribution of missing data is informative: it suggests a lack of research has been done on non-vertebrates, resulting in their de-prioritisation in the ranking process [@Moore]. In terms of *known* ranks, reptiles appear to have the greatest proportion of secure species, whilst mammals have the greatest proportion of critically imperiled species. 
+
+```{r}
+#| label: fig-constat
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: "Distribution of assessed conservation status using NatureServe ranking system. Number above the bars gives the total number of species per taxon."
+#| fig-pos: H
+
+# --- referenced code: 
+# https://dataverse.harvard.edu/file.xhtml?fileId=4931778&version=1.0 
+new_cleaned_species_data <- cleaned_species_data |>
+  # relabel status numbers
+  mutate(status = case_when(
+    status == 1 ~ "Critically Imperiled",
+    status == 2 ~ "Imperiled",
+    status == 3 ~ "Vulnerable",
+    status == 4 ~ "Apparently Secure",
+    status == 5 ~ "Secure",
+    status == "UNK" ~ "Unknown",
+    TRUE ~ as.character(status)
+  )) |>
+  # convert status to a factor with the desired levels
+  mutate(status = factor(status, levels = c("Critically Imperiled", 
+                                            "Imperiled", "Vulnerable",
+                                            "Apparently Secure", "Secure", 
+                                            "Unknown"))) |>
+  # convert taxon to a factor with levels arranged in the same order as Fig 1(a)
+  add_count(taxon) |> # add column to count num of occurrences of each taxon
+  group_by(taxon, status) |> # group by unique taxon-status groups
+  # count num of occurrences of each taxon-status group, and total number of 
+  # rows in each group
+  dplyr::summarise(count = n(), total = n[1]) |>
+  mutate(proportion = count / total)
+# --- 
+
+# assign colour to each status, as used by NatureServe
+# https://www.natureserve.org/conservation-status-assessment
+status_colours <- c(
+  "Critically Imperiled" = "#DB0908", # Red
+  "Imperiled" = "#F17619", # Orange
+  "Vulnerable" = "#FDD131", # Yellow
+  "Apparently Secure" = "#27BBEF", # Light blue
+  "Secure" = "#194B89", # Blue
+  "Unknown" = "grey" # Grey
+)
+
+# plot data
+new_cleaned_species_data |>
+  ggplot(aes(x = taxon, y = proportion, fill = status)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_manual(values = status_colours) + # apply custom colors
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + # rotate x-labels
+  labs(x = "Taxon", y = "Proportion", fill = "Status") +
+  # add counts for each taxon above the stacked chart
+  geom_text(aes(x = taxon, y = 1.05, label = total), size = 3) 
+```
+
+### Species Uniqueness 
+
+Species uniqueness measures how evolutionarily isolated a species is on its family (or phylogenetic) tree [@Redding]. A species that is not unique has a number of closely-related species that are highly genetically similar and in little danger of going extinct [@Weitzman2]. A species that is maximally unique forms a monotypic genus: it is the only genetically distinct representatives of its entire genus and are very distantly related to their nearest relatives in other genera [@Weitzman2]. 
+
+The estimate of species uniqueness employed in this analysis is the number of species within a genus (or genus size), an idea to be accredited to Metrick and Weitzman [-@Weitzman2]. As discussed previously, a large genus size should imply a smaller degree of species uniqueness, and vice-versa. A benefit to this measure is that, because genera were historically defined based on obvious similarities in physical traits, it may capture aspects of distinctiveness that are more visually evident to humans [@Moore]. Another benefit is that data on genus size are widely available for almost every species ($n = 55,406/64,583$) in our dataset. For our analysis, the data were obtained from the 2021 version of two automated databases, the Integrated Taxonomic Information Service (ITIS) and the National Centre for Biotechnology Information (NCBI), via APIs using the `taxize` package in R [@taxize]. Note ITIS and NCBI curate taxonomic information from submissions made by taxonomy services, specialists, and researchers working on primary literature in the field [@ITIS; @NCBI]. These experts collect and analyse morphological and molecular data from thousands of species, and compare their values to references in relevant phylogenetic literature, in order to develop robust and consistent taxonomic classifications [@Smith]. Once taxonomic placement for each species is relatively certain, researchers may then approximate the number of species in each genera by counting methods [@Smith]. 
+
+In @fig-evdist, we plot the distribution of the logarithm of the genus size per taxon. A similar frequency distribution can be found among non-vertebrates, characterised by a wide distribution with a median on the order of 100, and tails that extend to logged genus sizes of 1000. This suggests the presence of relatively more polytypic genera and less evolutionary uniqueness in non-vertebrates than vertebrates, whose frequency distributions are concentrated in the range of 1 to 100. A definite comparison is, however, inhibited by the substantial differences in the sizes of the datasets: as seen in the figure, there is very little data collected as to the genus size of some taxa (namely, protists and reptiles) and hundreds of times more data for other taxa (namely, invertebrates and plants). 
+
+```{r}
+#| label: fig-evdist
+#| fig-cap: "Distribution of the logarithm of genus size per taxon."
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-pos: H
+
+# plot data 
+ggplot(cleaned_species_data, aes(x = ngenus)) +
+  geom_histogram(nbins = 10, fill = "gray", color = "black") +
+  facet_wrap(~taxon, ncol = 3, scales = "free") +
+  theme_minimal() +
+  labs(x = "Genus size (logged)", y = "Frequency") +
+  scale_x_log10()
+```
+
+### Google Ngrams for Species {#sec-ngrams}
+
+An $n$-gram is defined as a sequence of $n$ words in some particular order. An on-line search engine, the Google Books Ngram Viewer uses Optical Character Recognition (OCR) to provide the frequency of such $n$-grams in a corpus of over 25 million digitised books published over the course of more than 500 years [@Google]. These books are published in eight languages; in particular, the English corpus of 2019 consists over over 16 million of such books published between 1470 and 2019 [@Michel].
+
+As argued by Moore et al. [-@Moore], the rich variety of ways in which a species may provide utility -- through cultural significance, commercial value, scientific interest, and so forth -- should likely directly influence the frequency with which the species is written about over time. This is consistent with intuition and broader literature in applied computing, with authors positing that elements most influential on a society and culture should naturally be reflected in the written word of those who are a part of that society and culture [@Knight; @Aisopos]. As a result, following the workflow of Moore et al. [-@Moore], this analysis adopts common and scientific name $n$-grams as an additional estimate of the utility value of species to humans. Potential limitations of this measure are provided in @sec-ngrams2 and @sec-limitations.
+
+To determine the $n$-gram frequencies for species names, Moore et al. [-@Moore] performed case-insensitive searches in Google Books' English corpus of 2019 for all common and scientific names present in the NatureServe and ESA archives between 1800 and 2016. They assigned a frequency of 0 across all years whenever a name failed to return valid data. $N$-gram frequencies were then aggregated to the species level: more specifically, for unlisted species, common and scientific $n$-gram frequencies were taken to be their respective averages from 1950 to 2016. For listed species, they were calculated as their respective average frequencies from 1950 to 10 years *prior* to the date of the listing decision. This was done to minimise the bias to the $n$-gram values following any publicity generated by the listing decision [@Moore]. As the raw $n$-gram frequencies were very small, all frequencies were then $z$-score normalised, by dividing the difference between each raw frequency and the corresponding $n$-gram mean and dividing the whole by the corresponding $n$-gram standard deviation. Any species whose standardised common name $n$-gram had a frequency $>10$ times its corresponding standardised scientific $n$-gram frequency were finally discarded in the dataset [@Moore]. 
+
+A plot of the common and scientific $n$-gram frequencies per taxon is shown in @fig-ngram_distribution. This figure shows that scientific name $n$-grams are typically correlated with their corresponding common name $n$-grams. For birds, fishes and mammals, both types of $n$-grams are well above the standardised mean, whilst for the non-vertebrates -- comprising fungi, invertebrates and plants --, both types fall below the mean. Altogether, it appears that the utility value of a species is directly reflected in the frequency with which the species is written about *both* in colloquial and scientific settings, with vertebrates exhibiting greater utility value than non-vertebrates That scientific name $n$-grams are much greater in magnitude than their corresponding common name $n$-gram may be especially driven by the preferred usage of scientific names in technical literature. 
+
+```{r}
+#| label: fig-ngram_distribution
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: "Distribution of the mean common and scientific name $n$-gram frequencies per taxon."
+#| fig-pos: H
+
+taxon_means <- cleaned_species_data |>
+  group_by(taxon) |>
+  summarise(
+    mean_ngram_common = mean(ngram_common, na.rm = TRUE),
+    mean_ngram_science = mean(ngram_science, na.rm = TRUE)
+  )
+
+# reshape the data for plotting
+taxon_means_long <- pivot_longer(taxon_means,
+  cols = c(
+    mean_ngram_science,
+    mean_ngram_common
+  ),
+  names_to = "variable",
+  values_to = "mean_value"
+)
+
+# plot the means with legend in upper right corner
+ggplot(taxon_means_long, aes(x = taxon, y = mean_value, fill = variable)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  labs(
+    x = "Taxon",
+    y = expression("mean n-gram frequency"),
+    fill = NULL
+  ) +
+  scale_fill_manual(
+    values = c("#DB0908", "#194B89"),
+    labels = c("common name", "scientific name")
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = c(0.85, 0.84), # adjust legend position
+    legend.text.align = 0, # align legend labels to the left
+    legend.margin = margin(1.5, 1.5, 1.5, 1.5),
+    # adjust transparency
+    legend.background = element_rect(fill = alpha("white", 0.7)),
+    legend.text = element_text(size = 7.5),
+    # reduce size of legend squares to 0.5 cm
+    legend.key.size = unit(0.5, "cm")
+  )
+```
+
+
+### Listing of Species {#sec-listing}
+
+The dependent variable of interest in this analysis is the `listed` variable, set to 1 if the species was ESA-listed for protection at the time of its assessment, as of August 2020, and to 0 otherwise. An excellent overview of the process of listing a species is described by Metrick and Weitzman [-@Weitzman2]: it begins when the species is proposed by the USFWS as a "candidate" for protection. During its period of candidacy, USFWS collects data from internal and external sources to assess whether the species warrants listing. If sufficient scientific evidence exists, then the USFWS proceeds to submit a formal proposal under the Federal Register and makes requests for comments from the public. After this period of public surveying, USFWS comes a final decision, which officially determines whether the species is listed under the ESA. 
+
+Brief summary statistics of the total number and proportion (%) of listed species per taxon is presented in @tbl-list. The four non-vertebrates categories contain either no listed species (fungi, protists) or a relatively small proportion of listed species (invertebrates, plants). Instead, listing decisions are significantly biased towards the vertebrate categories, for which the average proportion is 6.0%-- about 2.5 times as high as the highest proportion of 2.4% among the non-vertebrate categories. 
+
+```{r}
+#| label: tbl-list
+#| tbl-cap: "Summary statistics table of the number of species listed under the ESA by taxon."
+#| echo: false
+#| message: false
+#| warning: false
+#| tbl-pos: H
+
+# group by taxon and calculate the number of listed species
+summary_list_table <- cleaned_species_data |>
+  group_by(taxon) |>
+  summarise(num_listed_species = sum(listed == 1, na.rm = TRUE))
+
+# define the total numbers of species per taxon
+total_number_species <- unique(new_cleaned_species_data$total)
+
+# calculate the proportion of listed species
+summary_list_table$proportion_listed <-
+  round((summary_list_table$num_listed_species / total_number_species) * 100, 1)
+
+# print the summary table as a kable
+summary_list_table |>
+  kable(
+    col.names = c("Taxon", "Listed", "Prop. (%)"),
+    format = "latex", booktabs = TRUE, linesep = ""
+  ) |>
+  column_spec(1, bold = TRUE)
+```
+
+# Model {#sec-model}
+
+## Model Set-up {#sec-model_setup}
+
+We perform binary logistic regression to determine the relative importance of species characteristics in the listing decision. This type of regression model requires the logit link function, which takes a linear combination of the relevant covariate values and converts them to a probability scale between 0 and 1. In particular, for some coefficients $\beta_0, \beta_1, \beta_2, ..., \beta_{U}$, the logit link function is given by  
+\begin{align}
+\text{logit}(\pi_i) = \log\left(\frac{\pi_i}{1-\pi_i}\right) = \beta_0 + \beta_1X_{i1} + \beta_2X_{i2} + \cdots + \beta_{U}X_{iU},
+\end{align}
+where $\pi_i$ denotes the probability of success for the $i$th sampling unit and $X_{i1}, X_{i2}, ..., X_{iU}$ are the values of the $U$ covariates of interests measured at the $i$th sampling unit [@MacKenzie]. 
+
+To apply this model to our dataset, we define, for each sampling unit $i$, $Y_i$ as the listing variable, set to $1$ if the species was listed at the time of its assessment, as of August 2020, and to 0 otherwise. We define $\pi_i$ as the corresponding probability of this event, that the species was listed as of August 2020. The $U = 5$ covariate values are $X_{i1}$ denoting one of the nine taxonomic classes to which species $i$ belongs, $X_{i2}$ denoting its NatureServe conservation status, $X_{i3}$ denoting its standardised scientific name $n$-gram score, $X_{i4}$ denoting its standardised common name $n$-gram score and $X_{i5}$ denoting the logarithm of its genus size. Our binary logistic regression model can then be expressed in terms of the logit link function as: 
+\begin{align}
+Y_i | \pi_i  & \sim \text{Bern}(\pi_i) \\
+\text{logit}(\pi_i) & = \beta_0 + \beta_1X_{i1} + \beta_2X_{i2} + \beta_3X_{i2} + \beta_4X_{i4} + \beta_5 X_{i5} \\
+\beta_0 & \sim \text{Normal}(0, 2.5), \\ 
+\beta_1 & \sim \text{Normal}(0, 2.5), \\
+\beta_2 & \sim \text{Normal}(0, 2.5), \\
+\beta_3 & \sim \text{Normal}(0, 2.5), \\
+\beta_4 & \sim \text{Normal}(0, 2.5), \\ 
+\beta_5 & \sim \text{Normal}(0, 2.5), 
+\end{align}
+where the regression coefficients $\beta_1, \beta_2, ..., \beta_5$ determine the size of the respective covariates, and $\beta_0$ is the intercept term. 
+
+To implement this Bayesian model, we use the `rstanarm` package [@rstanarm] in `R` [@R], with its default priors. 
+
+## Model Justification
+
+The logistic regression model is most appropriate, because the outcome of interest -- whether or not a species was listed at the time of its assessment -- is binary and the covariates used are an admixture of categorical, discrete and continuous variables. Moreover, logistic regression is well suited to a principle goal of our analysis, which is to *predict* the probability of a species being listed when the values of its covariates are known, and to understand the relative importance of the covariates in making this prediction. Indeed, logistic regression is known to have a good predictive accuracy for many simple datasets, which proves often superior to a naïve Bayes [@Jurafsky]. In part, this is due to logistic regression being less prone to overfitting, which occurs when a model attempts to fit too perfectly the details of the dataset on which it has been trained, including random noise [@Jurafsky]. In tending to avoid this issue, logistic regression may tend to generalise well from the training set to unseen data. What is more, the coefficients of logistic regression are especially interpretable for the purposes of prediction, with the magnitude of each giving an indication of the impact of the covariate on the log-odds of the outcome occurring and the sign of each giving its direction of association. We utilise this predictive power in @fig-predict and @fig-prediction, where we graph the predicted probabilities of species being ESA-listed, as implied by the regression coefficients. 
+
+Logistic regression is also simple to implement and computationally efficient, requiring few computational resources [@Jurafsky]. This is suitable for our modestly-sized dataset ($n=60,481$) and for other datasets in ecological literature, which often contain extensive amounts of information on various environmental variables. 
+
+## Model Validation {#sec-model_validation}
+
+To validate the use of a logistic regression model, we check its five main assumptions, as outlied by Stoltzfus [-@Stoltzfus]: dichotomy in the outcome, independence of observations, linearity in the logit for continuous variables, absence of multicollinearity and lack of strongly influential outliers. 
+
+### Dichotomy in Outcome 
+
+A first assumption of logistic regression is that the response variable is binary or dichotomous, taking on only two possible outcomes. This assumption is evidently satisfied, because our response variable measures whether a species has been listed at the time of its assessment, assuming the value of 1 if true and 0 otherwise. 
+
+### Independence of Observations  
+
+A second assumption is independence of observations, whereby all sample group outcomes are separate from each other [@Stoltzfus]. This means that one's data does not include duplicate measures or other correlated outcomes. A lack of independence in observations is undesirable to the degree that produces incorrect estimates of confidence intervals and $p$-values [@Liang]. 
+
+According to Harris [-@Harris], there exist two principle ways in which data may commonly fail this assumption: First, data may include repeated measures of the same entity. Second, data may include groupings, such as multiple family members in the same residence or multiple people from the same class in a school, in which observations are likely to share characteristics. We have checked that our data contains no duplicate measures, with each observation corresponding to a distinct species. We have also made note that our data *does* exhibit groupings of species by taxa, which may limit its variability. However, as shown in @fig-dag-quarto, our nine taxa represent "kingdom" divisions at the second highest level of taxonomic rank in the hierarchy of biological classification. Each such kingdom so far counts hundreds of thousands to millions of known species, who have evolutionarily diverged from one of three "domain" points of origin hundreds of millions of years ago [@Margulis]. Thus, kingdoms can only characterise, in the broadest scientific sense, the lifestyle and adaptive traits of the species they contain [@Santelices]. Within each kingdom, the biological diversity of species is very considerable, featuring abundant morphological, genetic and functional heterogeneity [@Santelices]. The groupings are highly general and, thus, are not expected to pose the same issue as matched data from, say, multiple people from the same nuclear family. Accordingly, we believe that the independence assumption of logistic regression is sufficiently satisfied for our analysis. 
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| eval: false 
+
+all(duplicated(cleaned_species_data)) == FALSE 
+```
+
+```{dot}
+//| label: fig-dag-quarto
+//| fig-cap: "The hierarchy of biological classification."
+//| fig-width: 6
+# code referenced from https://tellingstorieswithdata.com/04-writing_research.html 
+digraph D {
+  
+  node [shape=plaintext, fontname = "Latin Modern Roman"];
+  
+  a [label = "Domain"];
+  b [label = "Kingdom"];
+  c [label = "Phylum"];
+  d [label = "Class"];
+  e [label = "Order"];
+  f [label = "Family"];
+  g [label = "Genus"];
+  h [label = "Species"];
+  
+  { rank=same a b c d e f g h};
+  
+  a->b->c->d->e->f->g->h;
+}
+```
+
+### Linearity {#sec-linearity}
+
+A third assumption is that a linear relationship must exist between continuous covariates and the logit of the outcome [@Stoltzfus]. In logistic regression models, component-plus-residual (CR) plots are a standard tool to diagnose violations of the linearity assumption [@Nahhas]. 
+
+@fig-linearity and @fig-linearity2 show CR plots for the three continuous covariates $X$: common and scientific name $n$-gram frequencies (further abbreviated as `ngram_common` and `ngram_science`) and the logarithm of the genus size. To date, the package used to run CR plots is only compatible with `glm` objects, so we test with a "proxy" model of the equivalent form in `glm`. The full model details of the proxy model are included in @tbl-modelsum3 in @sec-model_details in the Appendix. We argue that running a test with a proxy is enough to validate the original model, given that the regression coefficients and model performance metrics of the two are highly similar. 
+
+```{r}
+#| label: fig-linearity
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: "CR plots for common and scientific $n$-gram frequencies."
+#| fig-pos: H
+
+# code reference: https://www.bookdown.org/rwnahhas/RMPH/blr-linearity.html
+
+# car package is so far only compatible with glm models 
+# set reference level of taxon in to "Mammals"
+cleaned_species_data$taxon <- factor(cleaned_species_data$taxon)
+cleaned_species_data$taxon <- relevel(cleaned_species_data$taxon,
+  ref = "Mammals"
+)
+
+# run proxy model in glm 
+species_listing_model_glm <- glm(
+  listed ~ taxon + status +
+    ngram_common + ngram_science +
+    I(log(ngenus)),
+  data = cleaned_species_data,
+  family = binomial(link = "logit")) 
+
+# Plot 1: ngram_common + ngram_science
+car::crPlots(species_listing_model_glm,
+  terms = ~ ngram_common + ngram_science,
+  pch = 20,
+  col = "darkgrey",
+  smooth = list(smoother = car::gamLine),
+  ylim = c(0, 50),
+  ylab = "CR",
+  main = NULL
+)
+```
+
+```{r}
+#| label: fig-linearity2
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: "CR plot for the logarithm of the genus size."
+#| fig-pos: H
+
+# Plot 2: log(ngenus)
+car::crPlots(species_listing_model_glm,
+  terms = ~ I(log(ngenus)),
+  pch = 20,
+  col = "darkgrey",
+  smooth = list(smoother = car::gamLine),
+  ylim = c(0, 50),
+  ylab = "CR",
+  xlab = "Genus size (logged)",
+  main = NULL
+)
+```
+
+In each above below, the raw predictor values of $X$ are plotted on the horizontal axis; the residuals and contribution of $X$, adjusted for all the other predictors in the model, are plotted on the vertical axis. Note the vertical axis is restricted to the range of 0 to 50, in order to allow a closer visualisation of the details of the fitted lines. The dashed blue line illustrates the relationship between $X$ and outcome under the assumption of linearity, whilst the solid line is a smoother that relaxes the linearity assumption [@Nahhas]. To diagnose non-linearity, it suffices to observe whether or not the solid line falls exactly on top of the dashed line: a perfect coincidence of these lines signifies that the linearity assumption is perfectly met [@Nahhas]. At the scale of our plot, there is an excellent coincidence between the solid and dashed lines in both panels @fig-linearity. There is a slight curvature to the solid line in @fig-linearity2, which can be ignored -- the deviation is very small and smoothers are known to be highly influenced by local fluctuations [@Nahhas]. Having found no strong non-linearity, we may conclude that the third assumption of logistic regression is likely met. 
+
+### Multicollinearity 
+
+A fourth assumption is the absence of mutlicollinearity, or high inter-correlations, among different covariates. A model with highly correlated covariates is undesirable to the extent that it produces regression coefficients with large standard errors, leading to instability in the model [@Stoltzfus]. When two or more covariates are highly correlated, the variance inflation factor (VIF) quantifies how much variance in an estimated regression coefficient results from this correlation [@Repala]. The convention for VIFs is well-established: in general, a GVIF exceeding 4 warrants further investigation, whereas a VIF exceeding 10 indicates serious evidence of multicollinearity requiring correction [@STA462_2].
+
+In @tbl-vif, we display the returned VIF values for each predictor in our model. All covariates exhibit VIFs well below 4, implying that no significant multicollinearity can be detected in the dataset. This validates the fourth assumption required to apply a logistic regression model. 
+
+```{r}
+#| label: tbl-vif
+#| echo: false
+#| warning: false
+#| message: false
+#| tbl-cap: "VIF values for predictor variables."
+#| tbl-pos: H
+
+# Run check_collinearity on the model 
+# Message of low correlation is returned 
+vif_result <- check_collinearity(species_listing_model)
+
+# Convert results to data frame 
+vif_df <- as.data.frame(vif_result)
+
+# Create a data frame with GVIF values
+gvif_data <- data.frame(VIF = round(vif_df$VIF, 2)) 
+
+# Convert the data frame into a kable table
+vif_table <- kable(
+  t(gvif_data), # transpose 
+  col.names = c("taxon", "status", "common n-gram", "science n-gram", 
+                "genus size (logged)"), 
+  escape = FALSE,
+  align = "ccccc"
+) |>
+  kable_styling() |>
+  column_spec(1, bold = T)
+
+vif_table
+```
+
+### Influential Values {#sec-influential}
+
+```{r}
+#| label: fig-cooks_distance
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: "Cook's distance values for each observation in the dataset."
+#| fig-pos: H
+
+# Run the outlier check: returns no outliers 
+result <- check_outliers(species_listing_model, method = "cook")
+
+# Convert result to data frame 
+result <- as.data.frame(result)
+
+# Find the indices of the five highest Cook distances
+top_indices <- order(result$Distance_Cook, decreasing = TRUE)[1:6]
+
+# Plot Cook's distances vs observations
+ggplot(result, aes(x = Row, y = Distance_Cook)) +
+  geom_point(size = 1.5) +
+  # Highlight top 5 points
+  geom_point(data = result[top_indices, ], color = "red", size = 1.5) + 
+  labs(x = "Observations",
+       y = "Cook's Distances") + 
+  theme_minimal()
+```
+
+A final assumption is a lack of strongly influential outliers. An observation is considered an outlier when its predicted outcome substantially differs to its actual outcome [@Stoltzfus]. Having too many outliers is undesirable to the extent that it can compromise a model's overall accuracy [@Stoltzfus]. To detect the presence of outliers, the Cook's distance method is used. For each observation $i$, the Cook's distance method returns a quantity $D_i$, representing how much the regression is changed when $i$ is removed from the dataset [@STA462]. In particular, a large Cook's distance implies observation $i$ has a strong influence on the fitted values, whilst a small Cook's distance implies a weak influence [@STA462]. The threshold is generally simple: if $D_i > 0.5$ or if $D_i$ is substantially larger than other Cook's distances in the dataset, then the $i$th data point *may* be influential and warrant closer investigation [@STA462].
+
+In @fig-cooks_distance, we plot the distribution of Cook's distances across all observations. Whilst all observations have Cook's distances less than the threshold of $0.5$, there are six or so points with appreciably greater Cook's distances than others-- these are highlighted in red. To be absolutely certain these six points are not influential, we run the same logistic model in `rstanarm` without them. The results are included in @tbl-modelsum2 in @sec-model_details in the Appendix. As noted therein, changes to the estimated regression coefficients are negligible, being typically on the order of $10^{-2}$, which is well-within one standard error. With all points having $D_i < 0.5$ and with the negligible weighting of these six key points on the regression coefficients, it is likely no significant influential outliers exist. This is consistent with the fifth assumption required to apply a logistic regression model.
+
+# Results {#sec-results}
+
+@tbl-modelsum shows the coefficients of the predictor variables of the logistic regression model, defined in @sec-model_setup. 
+
+```{r}
+#| label: tbl-modelsum
+#| echo: false
+#| warning: false
+#| message: false
+#| tbl-cap: "Model summary of listing decision regression. SE denotes standard error."
+#| tbl-pos: H
+
+# modelsummary is neither working in console & Quarto file
+# number of observations used by model
+n <- nobs(species_listing_model)
+# get model performance values 
+species_listing_model$R2 <- model_performance(species_listing_model)$R2
+species_listing_model$RMSE <- model_performance(species_listing_model)$RMSE 
+
+# make data frame of regression coefficients 
+logit_coeff <- broom.mixed::tidy(species_listing_model) |>
+  # relabel row names 
+  mutate(term = case_when(
+    term == "taxonAmphibians" ~ "Amphibians",
+    term == "taxonBirds" ~ "Birds",
+    term == "taxonFishes" ~ "Fishes",
+    term == "taxonFungi" ~ "Fungi",
+    term == "taxonInvertebrates" ~ "Invertebrates",
+    term == "taxonPlants" ~ "Plants",
+    term == "taxonProtists" ~ "Protists",
+    term == "taxonReptiles" ~ "Reptiles",
+    term == "status2" ~ "Imperiled",
+    term == "status3" ~ "Vulnerable",
+    term == "status4" ~ "Apparently Secure",
+    term == "status5" ~ "Secure",
+    term == "statusUNK" ~ "Unknown",
+    term == "ngram_common" ~ "Common n-gram",
+    term == "ngram_science" ~ "Science n-gram",
+    term == "I(log(ngenus))" ~ "Genus size (logged)",
+    TRUE ~ term  # Keep other rows unchanged
+  )) |> 
+  # round estimates and standard errors
+  mutate(estimate = round(estimate, 2),
+         std.error = round(std.error, 2))
+
+# amend dataframe by adding in separating rows 
+logit_coeff <- rbind(logit_coeff[1, ], 
+                     c("Taxon (dropped = Mammals)", "", ""), 
+                     logit_coeff[2:9,], 
+                     c("Conservation Status (dropped = Critically imperiled)",
+                       "", ""), 
+                     logit_coeff[10:14,], 
+                     c("Other Covariates", "", ""), 
+                     logit_coeff[15:17,],
+                     c("Num. Obs.", n, ""), 
+                     c("R2", round(species_listing_model$R2, 2), ""), 
+                     c("RMSE", round(species_listing_model$RMSE, 2), "")) 
+
+# convert to tibble 
+logit_coeff <- tibble(logit_coeff) 
+
+# display in a nicely formatted table
+logit_coeff |> 
+  kable(col.names = c("Variable", "Estimate", "SE"),  align = "lcc",
+        format = "latex", booktabs = TRUE, linesep = "", digits = 2) |>
+  row_spec(bold = TRUE, row = c(2, 11, 17)) |>
+  row_spec(20, hline_after = TRUE) |> 
+  add_indent(c(3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18, 19, 20)) 
+
+```
+
+The estimates of the regression coefficients are not precisely the same as those provided by Moore et al. [-@Moore]. However, most agree within one standard error (SE), and preserve the same relative magnitude and sign as those obtained originally. There may be two main reasons for this discrepancy: first, to run their regression, Moore et al. [-@Moore] employed the `glm` function from the in-built `stats` package in `R`, rather than `stan_glm` from `rstanarm`. Accordingly, their logistic regression model was fit using maximum likelihood estimation, rather than by full Bayesian estimation by means of Markov chain Monte Carlo algorithms. Second, Moore et al. [-@Moore] included species with NatureServe conservation statuses of "Extinct" or "Probably Extinct" *exclusively* for regression analysis, whereas our analysis omits them completely. Indeed, we are only interested in the listing likelihood of *extant* species as opposed to those thought with significant probability to be already extinct. In addition, we wish to maintain consistency as to the possible set of status rankings we are evaluating throughout. 
+
+In spite of the discrepancies, our results sufficiently agree with those of Moore et al. [-@Moore] as to point to the same conclusions. We discuss these findings below from a probabilistic perspective. Useful to this discussion is that, to a first approximation, logit coefficients can be converted into probabilities by multiplying them by $p(1-p)$, where $p$ is the mean of the dependent variable [@Weitzman2]-- in our case, we have computed $p \approx 0.02$ and $p(1-p) \approx 0.02$. Our findings follow: 
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| eval: false
+# calculate p
+mean(cleaned_species_data$listed)
+# calculate p(1-p)
+mean(cleaned_species_data$listed) * (1 - mean(cleaned_species_data$listed))
+```
+
+(1) Regression coefficients and, thus, the likelihoods of listing, do not differ significantly among vertebrate species, including mammals, amphibians, birds, fish and reptiles. Overall, the non-vertebrates, including invertebrates, fungi, protists and plants, exhibit much smaller likelihoods of listing. To a first order approximation, *relative to mammals*, the listing probabilities of amphibians, birds, fish, fungi, invertebrates, plants, protists and reptiles differ by $-1, 1, 0.3, -14, -4, -2,  -85$ and $-0.2$, percentage points, respectively, all other variables being equal. Overall, the taxa with the greatest and least listing likelihoods are birds and protists, respectively, all other variables being equal. 
+
+(2) The NatureServe conservation status has the expected influence on listing. The negative coefficients in @tbl-modelsum, decreasing monotonically from the most (status = G1, critically imperiled) to the least (status = G5, secure) endangered, imply that less severe degrees of endangerment result in lower likelihoods of listing. A translation of the logit coefficients into probability terms implies that a one unit increase in conservation status on average results in a $2$ percentage point rise in the likelihood of listing. In addition, species with unknown conservation status are less likely to be listed. 
+
+(3) The notability of a species, as measured by $n$-gram frequency, has a positive influence on listing. Similar translations of coefficients into probabilities show that a unit increase in mean standardised common and scientific $n$-gram frequencies respectively yield $0.04$ and $1$ percentage point rises in the likelihood of listing. 
+
+(4) Higher species uniqueness, as measured by a smallness in genus size, is associated with an increased likelihood of listing. In particular, decreasing the number of species in a genus by 10% increases the listing likelihood by $0.4$ percentage points, all other variables being equal. As shown in @fig-evdist, this effect is largely driven by plants and invertebrates, which have larger and more variable distributions of genus size. 
+
+Moore et al. [-@Moore] do not include an estimate $\hat{\beta_0}$ of the intercept coefficient in their summary model. For our analysis, @tbl-modelsum shows $\hat{\beta_0} = 0.28$, which implies that the probability of listing a critically imperiled mammalian species in a monotypic genus, with a common and scientific name $n$-gram frequency of zero, is roughly $56$%. 
+
+Moreover, @tbl-modelsum gives two estimates of the goodness of fit of the model: the pseudo R-squared (R2) and Root Mean-Squared Error (RMSE). Moore et al. [-@Moore] instead give the log likelihood and Akaike Information Criterion (AIC), both of which we omit because they are only meaningful when *comparing* models [@Analyttica; @Earlien]. The obtained R2 value of 0.19 reveals that only 19% of the variability in the outcome variable can be explained by our regression model. Meanwhile, the RMSE value indicates an average magnitude of 0.13 between the predicted and observed probabilities. Given that our observed probabilities appear to range over three times this amount, the error is moderate and indicates an acceptably good fit to our data.  
+
+To visualise these relationships, we closely follow the replication code provided by Moore et al. [-@Moore] in the Harvard Dataverse repository [@HarvardDataverse]. We convert the logit coefficients in @tbl-modelsum into listing probabilities for each combination of taxon and NatureServe conservation status. Note we estimate these probabilities at the median values of the remaining model covariates, *i.e.*, $n$-gram values and genus sizes. To enhance their figure, we add a small amount of horizontal jitter to the points to reduce their superposition. The results are contained in @fig-predict. This figure shows that listing probability steeply declines with improvements in the assessed conservation status of a species. For any fixed conservation status, it shows strong preferences in the listing decision for vertebrate species, notably birds, over non-vertebrates, as discussed previously. 
+
+```{r}
+#| label: fig-predict
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: "Probability of species appearing on the ESA list at the time of conservation assessment, as implied by cofficients in Table 5, for each taxon and NatureServe conservation status."
+#| fig-pos: H
+
+# calculate median values and uncertainties for each variable
+taxconsmeans <- cleaned_species_data |> 
+  summarize(
+    ngram_common = median(ngram_common, na.rm = TRUE),
+    ngram_science = median(ngram_science, na.rm = TRUE),
+    ngenus = log(median(ngenus, na.rm = TRUE))
+  ) 
+
+# use coefficients from fit to find conditional probabilities of listing for
+# taxon-status groups 
+taxon <- levels(factor(cleaned_species_data$taxon)) 
+status <- levels(factor(cleaned_species_data$status)) 
+
+# convert values to probabilities of listing 
+taxconsmeans <- cleaned_species_data |> 
+  summarize(
+    ngram_common = median(ngram_common, na.rm = TRUE),
+    ngram_science = median(ngram_science, na.rm = TRUE),
+    ngenus = log(median(ngenus, na.rm = TRUE))
+  ) 
+
+# abbreviate model name
+fit1 <- species_listing_model 
+
+# use coefficients from fit to find conditional probabilities of listing for 
+# taxon-status groups
+for (i in 1:length(taxon)) {
+  for (j in 1:length(status)) {
+    # calculate intercept for the logistic regression model
+    intercept = fit1$coefficients[1] +
+      # add taxon coefficient if i is not 1
+      ifelse(i == 1, 0, fit1$coefficients[grep(taxon[i], 
+                                               names(fit1$coefficients))]) +
+      # add status coefficient if j is not 1 
+      ifelse(j == 1, 0, fit1$coefficients[grep(status[j], 
+                                               names(fit1$coefficients))])
+    # subset taxconsmeans dataframe based on current 'taxon[i]' and 'status[j]'
+    taxmeanstemp = taxconsmeans[which(taxconsmeans$taxon == taxon[i]), ]
+    taxmeanstemp = taxmeanstemp[grep(status[j], taxmeanstemp$status), ]
+    # calculate fitted values for the logistic regression model
+    fit = intercept + as.numeric(taxmeanstemp[3:5])%*%fit1$coefficients[15:17]
+    # transform fitted values into probabilities using the logistic function
+    fitprob = exp(fit) / (1 + exp(fit))
+    # assign 'fitprob' to 'taxconfit' if it's the first iteration
+    if (i == 1 & j == 1) 
+      taxconfit = fitprob
+    # append 'fitprob' to 'taxconfit' for subsequent iterations
+    if (i > 1 | j > 1) 
+      taxconfit = append(taxconfit, fitprob)
+  }
+}
+
+# create a data frame with taxon, status, and fitted probabilities
+taxconfit <- data.frame(
+  taxon = rep(taxon, each = length(status)),   
+  status = rep(status, length(taxon)),         
+  fitprob = taxconfit                         
+)
+
+# specify shapes for each taxon category
+shape_values <- c(1, 2, 3, 4, 5, 6, 7, 8, 9)  
+
+# Plot data with jitter along the x-axis for the last four status columns
+taxconfit |> 
+  ggplot(aes(x = status, y = fitprob, group = taxon, col = taxon, pch = taxon)) + 
+  geom_point(size = 3, stroke = 0.75, position = position_jitter(width = 0.15)) +  
+  labs(x = "Assessed Conservation Status", y = "Predicted Probability of Listing") + 
+  theme_minimal() +
+  scale_shape_manual(values = shape_values)
+```
+
+To extend the results of Moore et al. [-@Moore], we make predictions of the listing probabilities of species, as implied by the regression coefficients in @tbl-modelsum, based on their scientific and common $n$-gram values and logged genus sizes. These three covariates assume simulated values between their actual minimum and maximum bounds, whilst the taxon and conservation status are set to their reference levels of "Mammal" and "Critically imperiled", respectively. @fig-prediction shows how the predicted listing probability evolves smoothly with these three covariates, and displays the actual listing status of species in the dataset as points at binary values of 0 or 1. The general trend in all cases is that the listing probability rises with the notability of a species and its genus size, as discussed previously. 
+
+```{r}
+#| label: fig-prediction
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: "Probability of species appearing on the ESA list at the time of conservation assessment, as implied by cofficients in Table 5, for science and common ngrams as well as (logged) genus size."
+#| fig-pos: H
+
+# Omit NA from dataframe to make them compatible in size 
+cleaned_data <- na.omit(cleaned_species_data)
+
+# Convert taxon and status to factors
+cleaned_data$taxon <- factor(cleaned_data$taxon)
+cleaned_data$status <- factor(cleaned_data$status)
+
+# Create a data frame
+plotting_data <- data.frame(
+  ngram_science = seq(min(cleaned_data$ngram_science),
+    max(cleaned_data$ngram_science),
+    length.out = 100
+  ),
+  ngram_common = seq(min(cleaned_data$ngram_common),
+    max(cleaned_data$ngram_common),
+    length.out = 100
+  ),
+  taxon = levels(cleaned_data$taxon)[6], # reference level: mammal
+  status = levels(cleaned_data$status)[1], # reference level: G1
+  ngenus = seq(min(cleaned_data$ngenus),
+    max(cleaned_data$ngenus),
+    length.out = 100
+  ),
+  listed = (0:1)
+)
+
+# Predict probabilities using the model
+plotting_data$preds <- predict(species_listing_model,
+  newdata = plotting_data,
+  type = "response"
+)
+
+## Plot probabilities against covariates
+# Ngram science 
+ngram_science_plot <- ggplot(cleaned_species_data, 
+                             aes(x = ngram_science, y = listed)) +
+  geom_jitter(width = 0, height = 0.005, alpha = 0.2, colour = "#194B89") +
+  geom_line(data = plotting_data, aes(x = ngram_science, y = preds),
+            linewidth = 1, colour = "#194B89") +
+  labs(
+    x = expression(paste("Science ", italic("n"), "-gram")),
+    y = "Predicted Probability of Listing"
+  ) +
+  theme(plot.margin = margin(5, 10, 5, 10, "pt")) +
+  theme_minimal()
+
+# Ngram common 
+ngram_common_plot <- ggplot(cleaned_species_data, 
+                            aes(x = ngram_common, y = listed)) +
+  geom_jitter(width = 0, height = 0.005, alpha = 0.2, colour = "#DB0908") +
+  geom_line(data = plotting_data, aes(x = ngram_common, y = preds), 
+            linewidth = 1, colour = "#DB0908") +
+  labs(
+    x = expression(paste("Common ", italic("n"), "-gram")),
+    y = NULL
+  ) +
+  theme(axis.text.y = element_text(size = 0)) +
+  theme(plot.margin = margin(5, 10, 5, 10, "pt")) +
+  theme_minimal()
+
+# Log ngenus 
+log_ngenus_plot <- ggplot(cleaned_species_data, 
+                          aes(x = log(ngenus), y = listed)) +
+  geom_jitter(width = 0, height = 0.005, alpha = 0.2, colour = "#2a7a3f") +
+  geom_line(data = plotting_data, aes(x = log(ngenus), y = preds), 
+            linewidth = 1, colour = "#2a7a3f") +
+  labs(
+    x = "Genus Size (logged)",
+    y = NULL
+  ) +
+  theme(axis.text.y = element_text(size = 0)) +
+  theme(plot.margin = margin(5, 10, 5, 10, "pt")) +
+  theme_minimal()
+
+# Combine plots using the patchwork package
+combined_plots <- ngram_science_plot + ngram_common_plot + log_ngenus_plot
+# Arrange plots in 3 columns
+combined_plots <- combined_plots + plot_layout(ncol = 3) 
+
+# Print the combined plot
+print(combined_plots)
+```
+
+
+# Discussion {#sec-discussion}
+
+## Findings {#sec-findings}
+Since listing a species is the crucial first step in its protection, Moore et al. [-@Moore] seek to gain insights into the determinants of the government's decision to list the species under the ESA. Using a well-validated binary logistic regression model, our paper has successfully replicated and extended three of their major findings: 
+
+(1) The probability of listing appreciably changes with conservation status, decreasing monotonically from most (G1) to least endangered (G5) by an average of $2$ percentage points per one unit decrease in status.
+
+(2) The probability of listing is greater for species with higher evolutionary uniqueness, which belong to smaller genera. Evolutionary uniqueness has less influence than conservation status on the listing likelihood, with a 10% decrease in genus size increasing the listing likelihood by $0.4$ percentage points. 
+
+(3) Some evidence points to the probability of listing a species to be associated with its utility value to humans. In particular, imperiled vertebrates, towards which the general public tends to associate more charisma and value [@Kellert], are much more likely to be listed than their non-vertebrate counterparts. In addition, a species more frequently evoked in popular and scientific literature since 1950, as measured by its $n$-gram frequencies, are more likely to be listed than those less frequently written about. 
+
+All findings are expected, with the first two consistent with the criteria used by the USFWS when assessing a candidate species for listing. In the USFWS priority system, the actual level of endangerment of the species in question is the highest criterion for assessing listing, followed by its evolutionary uniqueness [@USFWS]. Other things equal, a higher likelihood of listing should thus be appreciably associated with species in greater endangerment and, secondly, with smaller genus sizes, consistent with the findings in (1) and (2). The USFWS places such priority on species uniqueness, because more biodiversity is generally preserved when one saves a species that is one of the few members of its genus than one of many closely related species [@USFWS]. Phrased differently, the extinction of the sole member of a monotypic genus produces a generally greater environmental impact than the extinction of one of the many related members of a polytypic genus [@Vidal]. 
+
+The USFWS claims to give no preference to popular species or so-called "higher-forms of life" [@USFWS], which seems, at first glance, contradictory to our third finding. However, we find that upholding this claim is unfeasible, for the USFWS has also acknowledged the importance of political and economic influences, as well as the role of public opinion, in shaping its listing activities [@Lieben]. In addition, a listing decision is made only when sufficient evidence has been gathered from scientific research, which has itself been observed to be systematically biased towards vertebrates [@Fazey; @Titley]. A number of factors have been proposed to explain this phenomenon, perhaps the most interesting of which is that researchers, their funding bodies or the media simply find studying charismatic vertebrates more appealing, owing to their impression as being a "higher form of life" with which human beings are more closely related or can more easily "identify"  [@Weitzman2]. The taxonomic weighting towards vertebrates and under-representation of invertebrates in literature, as reflected in $n$-gram frequencies, have implications for the awareness of the natural world in scientific and popular communities [@Titley]. With a lack of awareness of the conservation needs of non-vertebrates in the scientific and public conscience, it is expected that they are less likely to be listed by the USFWS, consistent with the finding in (3).
+
+## Projected Effects of Climate Change on Listing {#sec-climate}
+
+Making predictions of the response of biodiversity to global climate change has become a highly active area of research. They help to alert scientists and policy makers to potential risks and support the development of mitigation strategies to reduce undesirable impacts [@Bellard]. Though climate change models remain insufficiently well-developed, the best evidence suggests climate change will represent the greatest threat to global biodiversity over the next few decades, surpassing habitat destruction [@Leadley]. 
+
+One important climate change model are Representative Concentration Pathways (RCPs), adopted by the Intergovernmental Panel on Climate Change (IPCC). RCPs are developed from an integrated modelling framework that uses representations of the main greenhouse gas (GHG) emitting sectors -- industry, energy, agriculture and forestry -- to form a set of GHG emission pathways over the 21st century [@Riahi]. An "upper bound" to RCPs, RCP 8.5 corresponds to a very high emissions pathway scenario compared to the literature [@Riahi]. Under this pathway, GHG emissions and concentrations rise substantially over time, leading to a radiative forcing of $8.5$ W/m$^2$ at the end of the 21st century [@Riahi]. 
+
+Many models have been made to understand how species might respond to climate change, though predictions have varied widely [@Urban]. A Bayesian meta-analysis by Urban [-@Urban] synthesised over a hundred such published studies to estimate how the global extinction rate of species would vary depending on future mean global temperature increases and taxonomic groups. Under RCP 8.5, Urban [-@Urban]'s meta-analysis estimated the effect of warming would linearly accelerate the extinction rate of species, with risks remaining approximately constant across all taxonomic group. Overall, Urban [-@Urban] reported that 7.9% of species are predicted to become extinct from climate change at the end of the century.  
+
+Moore et al. [-@Moore] combined Urban [-@Urban]'s model, with the likelihood of listing conditional on conservation status, to produce a model of the effect of climate change on species listing. Due to the estimated linear effect of warming on extinction risk, the authors showed a linear increase in the number of critically imperiled species across all taxonomic groups [@Moore]. Of these critically imperiled species, only a proportion ($<20$%) were projected to be listed, with the precise proportion per taxon depending on the absolute prevalence of that taxon and its differential probability of listing [@Moore]. Under RCP 8.5, they that approximately 690 new species would be listed over the next 100 years, with an additional 2,800 becoming critically imperiled by remaining unlisted [@Moore].  
+
+## Ethical Implications {#sec-ethics}
+
+A main ethical implication is the question of whether it is ethically appropriate to assign species a utility value to humans. By utility value to humans is meant one of these three broad classes, originally defined by Metrick and Weitzman [-@Weitzman2]: The first is *commercial* value, defined in the uses of a species as food, medicine, clothing or entertainment. The second is *existence* or *aesthetic* value, representing the simple pleasure people derive from knowing the species exists in the wild, irrespective of whether they can observe it directly. The third is *contributory* value, whereby the species renders ecological services integral to the broader ecosystem and thus indirectly to humans. However, utility values are criticised as anthropocentric, measuring the worth of living things according to the services they provide to human societies [@Piccolo]. 
+
+This analysis uses two proxies for the utility value of a species to humans, being its taxonomic classification and the frequency the species' name has been evoked in English literature over the last 200 years. The evidence in @sec-results indicates that both covariates exert important influence in predicting the listing likelihood of a species. This suggests that more attention is paid to species in the degrees to which they resemble us in size or characteristics and to which they provide utility to us. An ethically provocative interpretation is to regard USFWS' preservation policy as an expansion of rights and obligations appreciably *biased* towards species proven to be useful to human societies. Though more evidence is required to support this interpretation, it provides a reasonable explanation of part of our results. Consistent with Lieben [-@Lieben], it implies that the listing activities of the USFWS are subject to the influence of political and popular influences, and not merely to scientific evidence. 
+
+## Accounting for Bias
+
+### Endangerment of Species 
+
+To perform NatureServe assessments, experienced scientists consider information on factors relevant to the persistence of a species. Each factor has a quantitative threshold, but the weight given to each factor is subject to the assessor's judgment [@Regan]. What is worse, there is no published documentation to date of the process of weighting and combining each factor to determine an overall NatureServe rank [@Regan]. As such, determining an overall threat category is in part subjective, which may lead to biases or inconsistencies in the classification of a species' conservation status. Following Hayward et al. [-@Hayward], inconsistencies in applying the NatureServe criteria can be separated into two broad classes: subconscious and conscious bias. The first arises when the NatureServe guidelines are unclear or ambiguous, leading to assessors making differential interpretations depending on their level of experience [@Hayward]. The second occurs when experts make decisions based on personal values or agendas-- particularly concerning, as it may introduce politicisation into NatureServe assessments [@Hayward]. To quantify the amount of error present, Regan, Master and Hammerson [-@Regan] captured the assumptions, reasoning and logical ordering of conservation experts, mapping this partially subjective process onto a set of explicit and objective decision rules. They denoted this algorithm, that formalised expert knowledge in a transparent and repeatable way, the NatureServe method. Regan et al. [-@Regan] discovered that 77% of species' assessments using the NatureServe method matched the more subjective assessments done by NatureServe staff, with no rank varying by more than one rank level. 
+
+In the context of this analysis, little can be done to account for the possible bias in NatureServe assessment data. All other credible sources of conservation rank assessment data, such as the International Union for Conservation of Nature (IUCN) Red List, rely on the subjective judgment of its assessors [@Hayward]. Comparisons between NatureServe, IUCN and other widely-used classification protocols have been made, with results finding the correspondence between methods to be unpredictable, with large variation among assessors [@Regan2]. The analysis is thus limited by the subjective procedure used to collect the NatureServe assessment data. The large match rate found by Regan et al. [-@Regan] is however suggestive of the fact that subjectivity is much less significant of a factor in NatureServe assessments than the objective expertise of its assessors.
+
+### Species Uniqueness 
+
+The NCBI and ITIS databases, from which we obtained genus size data, are also neither error-free nor complete. To minimise the possibility of classification and processing errors, the organisations employ expert curators, who select and verify high-quality data, and taxonomists, who investigate and correct parts of the classification [@Schoch]. Any disagreements are at once reported for review by a separate taxonomist, resulting in a high-quality database covering the major lineages of species [@Schoch]. 
+
+### Google Ngrams for Species {#sec-ngrams2}
+
+The Google Ngram frequency data are also subject to biases and errors, of which we discuss four possible sources: truncation bias, Optical Character Recognition (OCR) errors, skewed representativeness and metadata errors. We begin by arguing that the first two sources of errors are not significant to our analysis: As to the first, Moore et al. [-@Moore] reported occasions when the name of a species failed to return valid data between the years 1800 and 2016. In these cases, they simply set its corresponding $n$-gram frequencies to zero across all years. The null data was due to Google Books' tendency to *truncate* data for any word or phrase occurring in fewer than 40 books [@Moore]. Our analysis uses $n$-grams merely as a rough proxy of the relative popularity of species, so we do not expect truncating data below a low threshold to significantly influence the interpretation of our results. As to the second, Google Books is known to contain optical character recognition (OCR) errors, mostly owing to the poor print quality of ancient books [@Solovyev]. However, with recent improvements, the recognition error rate is now so negligibly low that it is not thought to seriously affect the results of statistical research [@Solovyev]. 
+
+The two sources of error that may be significant to our analysis follow: in corpus design, a *representative* corpus contains balanced proportion of texts of different genres and types across different time periods [@Solovyev]. Critics have argued that Google Books' English corpus is not a representative corpus, being composed of a sample of publications heavily biased towards scientific rather than colloquial works [@Pechenick]. This is reflected in the substantial difference between the mean scientific and common name $n$-gram frequencies shown in @fig-ngram_distribution. As such, the common $n$-gram measure is biased in that it vastly under-represents the popularity of species in colloquial works. Finally, Google Books suffers from metadata errors at a high rate of 37%, characterised by a flawed determination of title (15%), author (24%), publication date (20%), and so forth [@James]. Since our $n$-grams were calculated as the average of frequencies from 1950 to 2019 (or to 10 years prior to a listing decision), it may be the case that some 20% of frequencies were in fact not calculated within this period. Such errors may be important to our analysis, because we are concerned with estimating the utility value of species in modern society and culture. 
+
+An important step performed to minimise bias in $n$-gram frequencies is described in @sec-ngrams. To summarise, the $n$-grams of any single listed species were averaged from 1950 to 10 years *prior* to the date of its listing decision. This helped to minimise bias to the $n$-gram values following any publicity generated by the listing decision [@Moore].
+
+### Listing of Species 
+
+Sources of bias in the ESA listing data are discussed in @sec-findings and @sec-ethics. To summarise, the ESA data are systematically skewed to vertebrate species, reflecting the bias of scientific and popular communities to charismatic species with which they can more closely identify [@Weitzman2]. Moreover, USFWS' listing activities are swayed by political and economic influences, as well as public opinion, rather than merely by impartial analysis on scientific facts [@Lieben]. Like the NatureServe assessment data, appreciable conscious bias is present in the ESA listing data, where political commentators, direct agency admissions and judicial rulings intervene to make decisions based on their own personal values or agendas [@Lieben].  
+
+## Limitations {#sec-limitations}
+
+We are concerned with the degree to which genus size is a good measure of species uniqueness. To investigate this question, we will describe a second measure of species uniqueness, known as evolutionary distinctiveness (ED), which has received the most widespread use of all uniqueness measures [@Gumbs]. ED describes the species' relative contribution to the total evolutionary history of its clade [@Moore]. Known to be more accurate proxy than genus size, ED is computed by first assigning a value to each branch in the species' phylogenetic tree, equal to the branch's length (measured in millions of years) divided by the number of species subtending it [@Isaac]. The ED of a species is then the sum of these values for all branches from which the species is descended [@Isaac]. Moore et al. [-@Moore] obtained published ED scores for mammals, amphibians, birds and reptiles from the Evolutionary Distinctive Globally Endangered (EDGE) of Existence program. (As of August 2020, no data were yet available for fish, fungi, invertebrates or protists, and too few data ($n = 319/19,092$) were yet known for the plants in our study. This resulted in our decision to omit any consideration of ED scores in this analysis). Moore et al. [-@Moore] then plotted ED scores against genera size for species, for which ED scores were available. Although they noted the relationship tended in the expected direction, whereby species in larger genera tend to be less evolutionarily distinct, they established that only a very small proportion of the variance ($R^2 = 3.6%$) in the ED variable could be explained by the genus size variable [@Moore]. This shows that genus size is only a very weak measure of the ED of a species. Taking ED as the superior measure for species uniqueness, it follows that genus size is a limited measure of species uniqueness. 
+
+An evident limitation of the Google Ngram measure is that it captures only material published in digitised books, excluding popular media such as magazines, websites or newspapers. It cannot incorporate the frequency with which the species name is evoked in oral discourse, videos or podcasts, though these are important and rich media for determining the elements influential on a society and culture. Given the over-saturation of scientific texts in Google Books' English corpus [@Solovyev], the common name $n$-gram measure misses many written media platforms where non-technical writers may freely communicate on species and ecological issues of interest. Moreover, the English corpus exclusively includes material written in English, thereby failing to account for documentation of the species in other languages such as Spanish, the second most commonly spoken language in the United States. This further limits the $n$-gram measure, as solely assessing the utility value of species to an English-speaking public. 
+
+Although the USFWS mandates the listing all species at risk of extinction, capacity and budgetary constraints often slow down the the listing process, leading to a backlog of species awaiting assessment [@Alexander]. In some cases, USFWS will designate a species as "warranted but precluded" to acknowledge that listing the species is necessary but of lesser priority than other species in need of greater protection [@Alexander]. The binary nature of the ESA listing variable is limited to the degree that it treats a species in "warranted but precluded" category in the same as the "unlisted" category, though the distinction between the two may be of importance. Moreover, the NatureServe assessment and ESA listing data are a snapshot of a point in time, rendering it impossible to analyse changes in listing over time. As all datasets are dated before August 2020, they may not accurately reflect current endangerment and listing statuses of the species. 
+
+## Future Research 
+
+According to the Endangered Species Act (ESA) of 1973, the United States has declared a strong commitment to conserving biodiversity; but how do they spend their limited resources on this commitment? We investigated this question by studying actual decisions made by the U.S. government about which species to list and protect under the ESA. It remains to analyse the decisions of the U.S. government about how much to spend on them. At the time of the analysis, an inspection of the expenditures for the conservation of ESA-listed species show an order-of-magnitude difference between vertebrates and non-vertebrates [@Moore]. Among vertebrate species, expenditures are significantly biased towards salmonid species, notable in having large utility (especially, commercial) value to humans [@Moore]. An insightful statistical analysis for future study might be to regress USFWS' spending on a particular species in a particular year on a set of variables of interest. These variables might replicate those in our listing analysis -- taxonomic class, conservation status, genus size and notability (as measured by its $n$-gram frequencies) -- or others -- such as physical size, spatial extent and number of years since listing. Three other highly interesting covariates to be considered include the species' taxonomic rarity, recovery potential and an indicator capturing whether conservation of the species conflicts with economic development. Here, rarity denotes a measure of the restriction of a species in numbers or in area, whilst potential denotes the ease of improving a species condition [@Weitzman2]. The data for all three are made publicly available by the USFWS. Parallel to our analysis, the results of regression would reveal which scientific or anthropocentric species characteristics are prioritised in the spending decision. 
+ 
+In addition, future studies may use modelling to predict the change in ESA expenditures over the 21st century due to climate change. A comparative analysis to the total costs of climate change or to the discretionary costs of the U.S. government would be insightful in revealing how large these costs are. Further, estimates can be made to predict the magnitude of costs directly arising from the listing of an additional 690 species (see @sec-climate) due to climate change. 
+
+\appendix
+
+# Appendix {#sec-appendix} 
+
+## Supplemental Datasheet {#sec-datasheet} 
+
+A supplemental datasheet for the dataset used in this analysis is included with this paper. Please refer to this [link](https://github.com/julia-ve-kim/US_Climate_Change_Biodiversity/tree/main/other/datasheet) in the GitHub Repository. 
+
+## Additional Model Details  {#sec-model_details} 
+As described in @sec-linearity, we display the regression results of the `glm` version of the model for the purposes of comparison. A quick comparison to the results of the original regression in @tbl-modelsum3 show that any discrepancies in the estimates are not significant, being within all standard errors. This supports the use of the `glm` model as a proxy of the `rstanarm` model to validate the existence of a linear relationship between the continuous covariates and the logit of the outcome. 
+
+```{r}
+#| label: tbl-modelsum3 
+#| echo: false
+#| warning: false
+#| message: false
+#| tbl-cap: "Model summary of listing decision regression run in glm."
+#| tbl-pos: H
+
+# modelsummary::modelsummary(species_listing_model_glm) not working in quarto
+# number of observations used by model
+n <- nobs(species_listing_model_glm)
+# model performance metrics 
+species_listing_model_glm$R2 <- model_performance(species_listing_model_glm)$R2
+species_listing_model_glm$RMSE <- model_performance(species_listing_model_glm)$RMSE 
+
+# make data frame of regression coefficients 
+logit_coeff <- broom::tidy(species_listing_model_glm) |>
+  # relabel row names 
+  mutate(term = case_when(
+    term == "taxonAmphibians" ~ "Amphibians",
+    term == "taxonBirds" ~ "Birds",
+    term == "taxonFishes" ~ "Fishes",
+    term == "taxonFungi" ~ "Fungi",
+    term == "taxonInvertebrates" ~ "Invertebrates",
+    term == "taxonPlants" ~ "Plants",
+    term == "taxonProtists" ~ "Protists",
+    term == "taxonReptiles" ~ "Reptiles",
+    term == "status2" ~ "Imperiled",
+    term == "status3" ~ "Vulnerable",
+    term == "status4" ~ "Apparently Secure",
+    term == "status5" ~ "Secure",
+    term == "statusUNK" ~ "Unknown",
+    term == "ngram_common" ~ "Common n-gram",
+    term == "ngram_science" ~ "Science n-gram",
+    term == "I(log(ngenus))" ~ "Genus size (logged)",
+    TRUE ~ term  # Keep other rows unchanged
+  )) |> 
+  # round estimates and standard errors
+  mutate(estimate = round(estimate, 2),
+         std.error = round(std.error, 2)) |> 
+  # remove unneeded columns 
+  select(-statistic, -p.value) 
+
+# amend dataframe by adding in separating rows 
+logit_coeff <- rbind(logit_coeff[1, ], 
+                     c("Taxon (dropped = Mammals)", "", ""), 
+                     logit_coeff[2:9,], 
+                     c("Conservation Status (dropped = Critically imperiled)",
+                       "", ""), 
+                     logit_coeff[10:14,], 
+                     c("Other Covariates", "", ""), 
+                     logit_coeff[15:17,],
+                     c("Num. Obs.", n, ""), 
+                     c("R2", round(species_listing_model_glm$R2, 2), ""), 
+                     c("RMSE", round(species_listing_model_glm$RMSE, 2), ""))
+
+
+# convert to tibble 
+logit_coeff <- tibble(logit_coeff)
+
+# display in a nicely formatted table
+logit_coeff |> 
+  kable(col.names = c("Variable", "Estimate", "SE"), align = "lcc",
+        format = "latex", booktabs = TRUE, linesep = "", digits = 2) |>
+  row_spec(bold = TRUE, row = c(2, 11, 17)) |>
+  row_spec(20, hline_after = TRUE) |> 
+  add_indent(c(3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18, 19, 20))
+```
+
+As described in @sec-influential, we run a second logistic regression model in `rstanarm` [@rstanarm], with six points with highest Cook distance values removed from the dataset. The results of the regression are included in @tbl-modelsum2. A quick comparison to the results of the original regression in @tbl-modelsum show that any discrepancies in the estimates are not significant, being typically on the order of $10^{-2}$, which is well within all standard errors. This evidence points to those six high Cook distance points as not being significantly influential.
+
+```{r}
+#| label: tbl-modelsum2
+#| echo: false
+#| warning: false
+#| message: false
+#| tbl-cap: "Model summary of listing decision regression run without three points with the highest Cook distance values."
+#| tbl-pos: H
+
+# modelsummary is neither working in console & Quarto file
+# number of observations over which the model is run 
+n <- nobs(species_listing_model_Cook)
+# get model evaluation metrics 
+species_listing_model_Cook$R2 <- model_performance(species_listing_model_Cook)$R2
+species_listing_model_Cook$RMSE <- model_performance(species_listing_model_Cook)$RMSE
+
+# make data frame of regression coefficients 
+logit_coeff <- broom.mixed::tidy(species_listing_model_Cook) |>
+  # relabel row names 
+  mutate(term = case_when(
+    term == "taxonAmphibians" ~ "Amphibians",
+    term == "taxonBirds" ~ "Birds",
+    term == "taxonFishes" ~ "Fishes",
+    term == "taxonFungi" ~ "Fungi",
+    term == "taxonInvertebrates" ~ "Invertebrates",
+    term == "taxonPlants" ~ "Plants",
+    term == "taxonProtists" ~ "Protists",
+    term == "taxonReptiles" ~ "Reptiles",
+    term == "status2" ~ "Imperiled",
+    term == "status3" ~ "Vulnerable",
+    term == "status4" ~ "Apparently Secure",
+    term == "status5" ~ "Secure",
+    term == "statusUNK" ~ "Unknown",
+    term == "ngram_common" ~ "Common n-gram",
+    term == "ngram_science" ~ "Science n-gram",
+    term == "I(log(ngenus))" ~ "Genus size (logged)",
+    TRUE ~ term  # Keep other rows unchanged
+  )) |> 
+  # round estimates and standard errors
+  mutate(estimate = round(estimate, 2),
+         std.error = round(std.error, 2))
+
+# amend dataframe by adding in separating rows 
+logit_coeff <- rbind(logit_coeff[1, ], 
+                     c("Taxon (dropped = Mammals)", "", ""), 
+                     logit_coeff[2:9,], 
+                     c("Conservation Status (dropped = Critically imperiled)",
+                       "", ""), 
+                     logit_coeff[10:14,], 
+                     c("Other Covariates", "", ""), 
+                     logit_coeff[15:17,],
+                     c("Num. Obs.", n, ""), 
+                     c("R2", round(species_listing_model_Cook$R2, 2), ""), 
+                     c("RMSE", round(species_listing_model_Cook$RMSE, 2), ""))
+
+# convert to tibble 
+logit_coeff <- tibble(logit_coeff)
+
+# display in a nicely formatted table
+logit_coeff |> 
+  kable(col.names = c("Variable", "Estimate", "SE"), align = "lcc",
+        format = "latex", booktabs = TRUE, linesep = "", digits = 2) |>
+  row_spec(bold = TRUE, row = c(2, 11, 17)) |>
+  row_spec(20, hline_after = TRUE) |> 
+  add_indent(c(3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18, 19, 20))
+```
+
+
+# References
